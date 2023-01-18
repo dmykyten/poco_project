@@ -41,7 +41,7 @@
 # TODO: There is more though, instructions.json is pretty inconsistent between different
 #  architectures as it was all done on the go, and is under-documented
 
-
+import sys
 import os
 import re
 import json
@@ -60,6 +60,7 @@ class AssemblerCLI:
         """
         Checks the validity of the arguments and instantiates new Assembler class instance with them
         """
+
         # Creating the command line parser and main arguments
         parser = argparse.ArgumentParser()
         parser.add_argument("-f", "--file", help="provide the assembly program filepath")
@@ -110,13 +111,31 @@ class Assembler:
         Initializes the assembler, outputs the binary code file
         The actual encoded binary text is in self.binary_code
         """
+        # '''self.[a-z_]* = ''' regex for  ctrl + f
         self.isa = isa
+        
+        self.instructions = None
+        self.register_names = None
+        self.instruction_size = None
+
+
+        self.jump_label_allowed = None
+        self.mov_label_allowed = None
+        
+        self.jump_labels = None
+        self.mov_labels = None
+
+
+        self.binary_code = None
+        self.line = None
+
 
         # Open the list of instructions for this architecture and reformat it for our purposes
         # DefaultDict allows to have several values for the same key all pushed into type specified - we use list
         # This is useful since we might have the same assembly instruction encoded differently depending on the operands
         with open(os.path.join("modules", "instructions.json"), "r") as file:
             self.instructions = defaultdict(list)
+
             for opcode, details in json.load(file)[isa].items():
                 self.instructions[details[0]].append([opcode, details[-1]])
 
@@ -162,6 +181,7 @@ class Assembler:
             binary_line = ""
             arguments = line.split()
             assembly_instruction, operands = arguments[0], ''.join(arguments[1:]).split(',')
+            
             if len(operands) == 1 and operands[0] == '':
                 operands = []
 
@@ -321,6 +341,8 @@ class Assembler:
         # Eliminate processor-only information in type lists
         if "one" in types:
             types.remove("one")
+        if "two" in types:
+            types.remove("two")
 
         instruction_length = self.instruction_size[0]
         if self.isa == "cisc":
@@ -385,13 +407,16 @@ class Assembler:
                     try:
                         offset_op = int(operand[index + 2:-1])
                     except ValueError:
+
                         label_check = operand[index + 2:-1]
                         if label_check in self.mov_labels:
                             value = self.mov_labels[label_check]
+
                             if isinstance(value, int):
                                 if num_start != -1:
                                     raise AssemblerError("Provide valid assembly directives")
                                 offset_op = value
+
                             elif isinstance(value, list):
                                 if num_start == -1:
                                     offset_op = value[0]
@@ -415,6 +440,7 @@ class Assembler:
                     immediate_bytes += encoded_number
 
                 elif op_type.startswith("imm"):
+
                     operand = operand.replace(" ", "")
                     num_start = operand.find("$")
                     label_check = operand[1:] if num_start == -1 else operand[1:num_start - 1]
@@ -425,7 +451,9 @@ class Assembler:
                     # * the other references a location in memory, and might also include offsets, we encode bytes or words
                     if instruction_name in self.jump_label_allowed and operand.startswith(
                             ".") and label_check in self.jump_labels:
+
                         num = (self.jump_labels[label_check] - instruction_index)
+
                     elif instruction_name in self.mov_label_allowed and operand.startswith(
                             ".") and label_check in self.mov_labels:
                         value = self.mov_labels[label_check]
@@ -549,6 +577,8 @@ class Assembler:
                                                                                        recursive=True)))
             return any(result)
 
+
+
     @staticmethod
     def __encode_number(number, length):
         """
@@ -558,6 +588,7 @@ class Assembler:
         :return: str - two lines with encoded numbers of specified length
         """
         return bin(twos_complement(number, length))[2:].rjust(length, '0')
+
 
     @staticmethod
     def __is_number(n):
